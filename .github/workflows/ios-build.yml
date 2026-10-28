@@ -1,0 +1,66 @@
+name: Build Nubank Clone for iPhone
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-ios:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - name: Download original source
+        uses: actions/checkout@v4
+        with:
+          repository: ricardodalarme/Nubank-Clone
+          ref: 7e351cf7d4891658d3dfb5b0017e6f261636595e
+          persist-credentials: false
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.7'
+          channel: stable
+          cache: true
+      - name: Prepare unsigned iOS build
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          project = Path('ios/Runner.xcodeproj/project.pbxproj')
+          text = project.read_text()
+          text = re.sub(r'IPHONEOS_DEPLOYMENT_TARGET = 12\.0;', 'IPHONEOS_DEPLOYMENT_TARGET = 13.0;', text)
+          text = re.sub(r'DEVELOPMENT_TEAM = [^;]+;', 'DEVELOPMENT_TEAM = "";', text)
+          text = text.replace('com.ricardodalarme.nubankClone', 'com.local.nubankclone.study')
+          project.write_text(text)
+          podfile = Path('ios/Podfile')
+          podfile.write_text(podfile.read_text().replace("# platform :ios, '12.0'", "platform :ios, '13.0'"))
+          PY
+          flutter --version
+          xcodebuild -version
+          flutter pub get
+      - name: Run project tests
+        run: flutter test
+      - name: Compile for physical iPhone
+        run: flutter build ios --release --no-codesign
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d build/ios/iphoneos/Runner.app
+          mkdir -p build/ios/package/Payload
+          ditto build/ios/iphoneos/Runner.app build/ios/package/Payload/Runner.app
+          cd build/ios/package
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' Payload/Runner.app/Info.plist
+          zip -qry Nubank-Clone-unsigned.ipa Payload
+          unzip -t Nubank-Clone-unsigned.ipa
+          shasum -a 256 Nubank-Clone-unsigned.ipa > SHA256.txt
+      - name: Save IPA for Sideloadly
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nubank-Clone-unsigned-IPA
+          path: |
+            build/ios/package/Nubank-Clone-unsigned.ipa
+            build/ios/package/SHA256.txt
+          if-no-files-found: error
+          retention-days: 3
