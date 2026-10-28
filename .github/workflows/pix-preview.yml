@@ -1,0 +1,39 @@
+name: Preview Pix demo receipt
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: builder
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: ricardodalarme/Nubank-Clone
+          ref: 7e351cf7d4891658d3dfb5b0017e6f261636595e
+          path: app
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.35.7'
+          channel: stable
+          cache: true
+      - name: Render receipt with application fonts
+        run: |
+          git apply ../builder/pix-simulation.patch
+          flutter pub get
+          flutter test --plain-name 'receipt image includes both simulation notices'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pix-preview
+          path: app/test-output/*.png
+          if-no-files-found: error
+          retention-days: 3
