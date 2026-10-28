@@ -1,9 +1,9 @@
 diff --git a/lib/pages/pix/pix_demo_screen.dart b/lib/pages/pix/pix_demo_screen.dart
 new file mode 100644
-index 0000000..6455eb8
+index 0000000..11b33b4
 --- /dev/null
 +++ b/lib/pages/pix/pix_demo_screen.dart
-@@ -0,0 +1,245 @@
+@@ -0,0 +1,417 @@
 +import 'dart:ui' as ui;
 +import 'package:flutter/material.dart';
 +import 'package:flutter/rendering.dart';
@@ -22,7 +22,7 @@ index 0000000..6455eb8
 +  final _form = GlobalKey<FormState>();
 +  final _receiptKey = GlobalKey();
 +  final _fields = List.generate(6, (_) => TextEditingController());
-+  int _step = 0;
++  int _step = -1;
 +  SimulatedPix? _receipt;
 +  bool _sharing = false;
 +
@@ -74,20 +74,75 @@ index 0000000..6455eb8
 +      style: ElevatedButton.styleFrom(
 +        backgroundColor: AppColors.primary, foregroundColor: Colors.white,
 +        padding: const EdgeInsets.symmetric(vertical: 16),
++        shape: const StadiumBorder(),
 +      ),
 +      onPressed: onPressed, child: Text(label, textAlign: TextAlign.center),
 +    ),
 +  );
 +
++  Widget _action(String label, IconData icon, {bool transfer = false}) =>
++      Expanded(child: InkWell(
++        borderRadius: BorderRadius.circular(20),
++        onTap: () {
++          if (transfer) { setState(() => _step = 0); }
++          else { ScaffoldMessenger.of(context).showSnackBar(
++            const SnackBar(content: Text('Opção ilustrativa desta demonstração.')),
++          ); }
++        },
++        child: Padding(padding: const EdgeInsets.symmetric(vertical: 16),
++          child: Column(children: [
++            CircleAvatar(radius: 36, backgroundColor: const Color(0xfff0f0f0),
++                child: Icon(icon, color: Colors.black, size: 28)),
++            const SizedBox(height: 12),
++            Text(label, textAlign: TextAlign.center,
++                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
++          ]),
++        ),
++      ));
++
++  Widget _home() => Column(crossAxisAlignment: CrossAxisAlignment.start,
++    children: [
++      const Text('Área Pix', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
++      const SizedBox(height: 20),
++      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
++        _action('Transferir', Icons.payments_outlined, transfer: true),
++        _action('Pix no crédito', Icons.phone_android_outlined),
++        _action('Ler QR code', Icons.qr_code_scanner),
++      ]),
++      const SizedBox(height: 12),
++      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
++        _action('Pix Copia e Cola', Icons.copy_outlined),
++        _action('Pix Agendado', Icons.calendar_month_outlined),
++        _action('Cobrar', Icons.request_quote_outlined),
++      ]),
++      Row(children: [const Spacer(),
++        _action('Depositar', Icons.move_to_inbox_outlined), const Spacer()]),
++      const SizedBox(height: 24),
++      Container(padding: const EdgeInsets.all(20),
++        decoration: BoxDecoration(color: const Color(0xffe3dfff),
++            borderRadius: BorderRadius.circular(20)),
++        child: const Row(children: [
++          Expanded(child: Text('Explore uma transferência de teste, '
++              'sem movimentar dinheiro.', style: TextStyle(fontSize: 16))),
++          SizedBox(width: 16), Icon(Icons.science_outlined, color: AppColors.primary),
++        ]),
++      ),
++      const SizedBox(height: 28), const Divider(),
++      const Padding(padding: EdgeInsets.symmetric(vertical: 16),
++        child: Text('Preferências', style: TextStyle(fontSize: 18, color: Colors.grey))),
++    ],
++  );
++
 +  Widget _entry() => Form(
 +    key: _form, autovalidateMode: AutovalidateMode.onUserInteraction,
 +    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-+      Text('Simular um Pix', style: Theme.of(context).textTheme.headlineMedium),
++      const Text('Para quem você quer\ntransferir na simulação?',
++          style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
 +      const SizedBox(height: 8),
 +      const Text('Informe os dados para uma demonstração. A chave não será '
 +          'consultada e nenhum dinheiro será transferido.'),
 +      const SizedBox(height: 24),
-+      for (var i = 0; i < _fields.length; i++) Padding(
++      for (final i in [1, 0, 2, 3, 4, 5]) Padding(
 +        padding: const EdgeInsets.only(bottom: 16),
 +        child: TextFormField(
 +          key: ValueKey('pix-field-$i'), controller: _fields[i],
@@ -101,7 +156,8 @@ index 0000000..6455eb8
 +              'Instituição (opcional)', 'Seu nome (opcional)', 'Valor (R\$)',
 +              'Descrição (opcional)'][i],
 +            hintText: i == 4 ? '150,00' : null,
-+            counterText: '', border: const OutlineInputBorder(),
++            counterText: '', border: const UnderlineInputBorder(),
++            suffixIcon: i == 1 ? const Icon(Icons.qr_code, color: Colors.black) : null,
 +          ),
 +          validator: (value) {
 +            if (i == 4 && parsePixAmount(value ?? '') == null) {
@@ -128,22 +184,103 @@ index 0000000..6455eb8
 +  Widget _review() {
 +    final pix = _readForm();
 +    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-+      Text('Revisar simulação', style: Theme.of(context).textTheme.headlineMedium),
++      const Text('Você vai simular',
++          style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold)),
 +      const SizedBox(height: 24),
 +      Text(formatPixAmount(pix.cents),
-+          style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
++          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold,
++              color: AppColors.primary)),
++      const SizedBox(height: 8),
++      const Text('Conta de demonstração', style: TextStyle(color: AppColors.primary)),
 +      const SizedBox(height: 24),
-+      ..._details(pix),
++      const Row(children: [Expanded(child: Divider()),
++        Padding(padding: EdgeInsets.symmetric(horizontal: 16),
++            child: Icon(Icons.arrow_downward, color: Colors.grey)),
++        Expanded(child: Divider())]),
++      const SizedBox(height: 24),
++      Text(pix.recipient, style: const TextStyle(fontSize: 26,
++          color: AppColors.primary, fontWeight: FontWeight.bold)),
++      const SizedBox(height: 8),
++      Text(pix.institution.isEmpty ? 'Instituição informada manualmente' : pix.institution,
++          style: const TextStyle(color: AppColors.primary, fontSize: 17)),
++      const SizedBox(height: 20),
++      ExpansionTile(title: const Text('Detalhes'), tilePadding: EdgeInsets.zero,
++        children: _details(pix)),
++      const SizedBox(height: 20),
++      const ListTile(contentPadding: EdgeInsets.zero, title: Text('Quando'),
++          subtitle: Text('Agora, sem repetir'),
++          trailing: Icon(Icons.calendar_month_outlined, color: AppColors.primary)),
++      const ListTile(contentPadding: EdgeInsets.zero, title: Text('Via'),
++          subtitle: Text('Pix • simulação'),
++          trailing: Icon(Icons.edit_outlined, color: AppColors.primary)),
++      ListTile(contentPadding: EdgeInsets.zero, title: const Text('Mensagem'),
++          subtitle: Text(pix.description.isEmpty ? 'Sem mensagem' : pix.description),
++          trailing: const Icon(Icons.add, color: AppColors.primary)),
++      const SizedBox(height: 20),
 +      const Text('Ao continuar, será gerado apenas um comprovante demonstrativo. '
 +          'Não haverá débito, transferência ou validação bancária.'),
 +      const SizedBox(height: 24),
-+      _button('Confirmar simulação', () => setState(() {
-+        _receipt = _readForm(); _step = 2;
-+      })),
++      _button('Confirmar simulação', () => setState(() => _step = 3)),
 +      TextButton(onPressed: () => setState(() => _step = 0),
 +          child: const Text('Editar dados')),
 +    ]);
 +  }
++
++  Widget _testConfirmation() => Column(
++    crossAxisAlignment: CrossAxisAlignment.start, children: [
++      const Text('Confirme com o código\nde demonstração',
++          style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
++      const SizedBox(height: 20),
++      const Text('Este teste usa o código fixo 0000. '
++          'Não informe a senha do seu cartão ou da sua conta.',
++          style: TextStyle(fontSize: 18, color: AppColors.secondaryText)),
++      const SizedBox(height: 60),
++      const Row(mainAxisAlignment: MainAxisAlignment.spaceAround,
++          children: [Text('0', style: TextStyle(fontSize: 30)),
++            Text('0', style: TextStyle(fontSize: 30)),
++            Text('0', style: TextStyle(fontSize: 30)),
++            Text('0', style: TextStyle(fontSize: 30))]),
++      const SizedBox(height: 60),
++      _button('Usar código de teste 0000', () async {
++        setState(() => _step = 4);
++        await Future<void>.delayed(const Duration(milliseconds: 900));
++        if (!mounted) return;
++        setState(() { _receipt = _readForm(); _step = 5; });
++      }),
++    ],
++  );
++
++  Widget _processing() => const Padding(
++    padding: EdgeInsets.only(top: 150),
++    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
++      Text('Simulando…', style: TextStyle(fontSize: 32, color: Colors.grey)),
++      SizedBox(height: 36),
++      Text('Gerando comprovante\nde demonstração…',
++          style: TextStyle(fontSize: 34, fontWeight: FontWeight.bold)),
++      SizedBox(height: 40),
++      LinearProgressIndicator(value: .7, color: AppColors.primary),
++    ]),
++  );
++
++  Widget _success() => Column(crossAxisAlignment: CrossAxisAlignment.start,
++    children: [
++      const Padding(padding: EdgeInsets.symmetric(vertical: 30),
++        child: CircleAvatar(radius: 44, backgroundColor: Color(0xffe3dfff),
++          child: Icon(Icons.check, color: AppColors.primary, size: 54))),
++      const Text('Sua simulação foi concluída',
++          style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
++      const SizedBox(height: 32),
++      Text(formatPixAmount(_receipt!.cents),
++          style: const TextStyle(fontSize: 38, fontWeight: FontWeight.bold)),
++      const SizedBox(height: 8),
++      Text('Para ${_receipt!.recipient}', style: const TextStyle(fontSize: 18)),
++      const SizedBox(height: 32),
++      ..._details(_receipt!),
++      const Text('Nenhum pagamento foi realizado.'),
++      const SizedBox(height: 32),
++      _button('Abrir comprovante demonstrativo', () => setState(() => _step = 2)),
++    ],
++  );
 +
 +  Widget _result() => Column(crossAxisAlignment: CrossAxisAlignment.stretch,
 +    children: [
@@ -173,12 +310,17 @@ index 0000000..6455eb8
 +      backgroundColor: Colors.white,
 +      appBar: AppBar(
 +        backgroundColor: Colors.white, foregroundColor: AppColors.text,
-+        elevation: 0, title: const Text('Pix • demonstração'),
++        elevation: 0, title: const Text('Demonstração'),
 +        leading: IconButton(
-+          tooltip: _step == 1 ? 'Voltar aos dados' : 'Fechar',
-+          icon: Icon(_step == 1 ? Icons.arrow_back : Icons.close),
++          tooltip: _step >= 0 ? 'Voltar' : 'Fechar',
++          icon: Icon(_step >= 0 ? Icons.arrow_back : Icons.close),
 +          onPressed: () {
 +            if (_step == 1) { setState(() => _step = 0); }
++            else if (_step == 0) { setState(() => _step = -1); }
++            else if (_step == 3) { setState(() => _step = 1); }
++            else if (_step == 2) { setState(() => _step = 5); }
++            else if (_step == 4) { return; }
++            else if (_step == 5) { setState(() => _step = -1); }
 +            else { Navigator.of(context).pop(); }
 +          },
 +        ),
@@ -187,7 +329,11 @@ index 0000000..6455eb8
 +        const SimulationNotice(),
 +        Expanded(child: SingleChildScrollView(
 +          key: ValueKey(_step), padding: const EdgeInsets.all(20),
-+          child: _step == 0 ? _entry() : _step == 1 ? _review() : _result(),
++          child: switch (_step) {
++            -1 => _home(), 0 => _entry(), 1 => _review(),
++            3 => _testConfirmation(), 4 => _processing(),
++            5 => _success(), _ => _result(),
++          },
 +        )),
 +      ])),
 +    ),
@@ -219,30 +365,56 @@ index 0000000..6455eb8
 +class SimulatedPixReceipt extends StatelessWidget {
 +  final SimulatedPix pix;
 +  const SimulatedPixReceipt({required this.pix, super.key});
++  Widget _row(String label, String value) => Padding(
++    padding: const EdgeInsets.symmetric(vertical: 14),
++    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
++      Expanded(flex: 5, child: Text(label,
++          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600))),
++      const SizedBox(width: 14),
++      Expanded(flex: 7, child: Text(value, textAlign: TextAlign.right,
++          style: const TextStyle(fontSize: 14, color: Color(0xff666666)))),
++    ]),
++  );
 +  @override
 +  Widget build(BuildContext context) => Material(color: Colors.white,
 +    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
 +      const SimulationNotice(),
 +      Padding(padding: const EdgeInsets.all(20),
 +        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-+          const Icon(Icons.science_outlined, size: 40, color: AppColors.primary),
++          const Icon(Icons.science_outlined, size: 36, color: Colors.grey),
 +          const SizedBox(height: 16),
 +          const Text('Comprovante de simulação',
 +              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
 +          const SizedBox(height: 8),
-+          const Text('Nenhum pagamento foi realizado.'),
++          Text(pix.dateLabel, style: const TextStyle(color: Colors.grey)),
 +          const SizedBox(height: 24),
-+          Text(formatPixAmount(pix.cents),
-+              style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold)),
-+          const Divider(height: 40), ..._details(pix),
-+          Text('Gerado em: ${pix.dateLabel}'),
++          _row('Valor', formatPixAmount(pix.cents)),
++          _row('Tipo de operação', 'Pix • demonstração'),
++          _row('Referência de teste', pix.reference),
++          const Divider(height: 40),
++          const Text('Destino • dados informados', style: TextStyle(color: Colors.grey)),
 +          const SizedBox(height: 12),
-+          Text('Referência demonstrativa: ${pix.reference}',
-+              style: const TextStyle(fontSize: 12)),
-+          const SizedBox(height: 20),
-+          const Text('Documento de demonstração. Não é um comprovante bancário '
-+              'e não confirma recebimento, débito ou transferência.',
-+              style: TextStyle(fontSize: 12)),
++          _row('Nome', pix.recipient),
++          _row('Chave não verificada', pix.pixKey),
++          _row('Instituição', pix.institution.isEmpty ? 'Não informada' : pix.institution),
++          const Divider(height: 40),
++          const Text('Origem • dados informados', style: TextStyle(color: Colors.grey)),
++          const SizedBox(height: 12),
++          _row('Nome', pix.sender.isEmpty ? 'Não informado' : pix.sender),
++          if (pix.description.isNotEmpty) _row('Mensagem', pix.description),
++          const SizedBox(height: 24),
++          Container(color: const Color(0xfff2f2f2),
++            padding: const EdgeInsets.all(16),
++            child: const Column(crossAxisAlignment: CrossAxisAlignment.start,
++              children: [
++                Text('Nenhum pagamento foi realizado.',
++                    style: TextStyle(fontWeight: FontWeight.bold)),
++                SizedBox(height: 12),
++                Text('Documento de demonstração. Não é um comprovante bancário '
++                    'e não confirma recebimento, débito ou transferência.',
++                    style: TextStyle(fontSize: 12)),
++              ]),
++          ),
 +        ]),
 +      ),
 +      const SimulationNotice(),
@@ -422,10 +594,10 @@ index 2319967..0f48649 100644
    flutter_native_splash: ^2.4.3
 diff --git a/test/simulated_pix_test.dart b/test/simulated_pix_test.dart
 new file mode 100644
-index 0000000..5542c76
+index 0000000..f0f105d
 --- /dev/null
 +++ b/test/simulated_pix_test.dart
-@@ -0,0 +1,76 @@
+@@ -0,0 +1,90 @@
 +import 'dart:io';
 +import 'dart:ui' as ui;
 +import 'package:flutter/material.dart';
@@ -459,8 +631,9 @@ index 0000000..5542c76
 +  testWidgets('receipt image includes both simulation notices', (tester) async {
 +    final captureKey = GlobalKey();
 +    await tester.pumpWidget(MaterialApp(home: Scaffold(
-+      body: SingleChildScrollView(child: RepaintBoundary(key: captureKey,
-+          child: SizedBox(width: 393, child: SimulatedPixReceipt(pix: sample)))))));
++      body: SingleChildScrollView(child: Align(alignment: Alignment.topLeft,
++        child: SizedBox(width: 393, child: RepaintBoundary(key: captureKey,
++          child: SimulatedPixReceipt(pix: sample))))))));
 +    await tester.pumpAndSettle();
 +    expect(find.text('SIMULAÇÃO — SEM VALOR FINANCEIRO'), findsNWidgets(2));
 +    expect(find.text('Comprovante de simulação'), findsOneWidget);
@@ -478,6 +651,8 @@ index 0000000..5542c76
 +  });
 +  testWidgets('empty form cannot advance to confirmation', (tester) async {
 +    await tester.pumpWidget(const MaterialApp(home: PixScreen()));
++    await tester.tap(find.text('Transferir'));
++    await tester.pumpAndSettle();
 +    final button = find.text('Revisar simulação');
 +    await tester.ensureVisible(button);
 +    await tester.tap(button);
@@ -487,6 +662,8 @@ index 0000000..5542c76
 +  });
 +  testWidgets('entered details survive review and receipt generation', (tester) async {
 +    await tester.pumpWidget(const MaterialApp(home: PixScreen()));
++    await tester.tap(find.text('Transferir'));
++    await tester.pumpAndSettle();
 +    await tester.enterText(find.byKey(const ValueKey('pix-field-0')), 'Pessoa de teste');
 +    await tester.enterText(find.byKey(const ValueKey('pix-field-1')), 'exemplo@example.com');
 +    await tester.enterText(find.byKey(const ValueKey('pix-field-4')), '150,50');
@@ -496,6 +673,15 @@ index 0000000..5542c76
 +    expect(find.text('R\$ 150,50'), findsOneWidget);
 +    await tester.ensureVisible(find.text('Confirmar simulação'));
 +    await tester.tap(find.text('Confirmar simulação'));
++    await tester.pumpAndSettle();
++    expect(find.text('Usar código de teste 0000'), findsOneWidget);
++    await tester.ensureVisible(find.text('Usar código de teste 0000'));
++    await tester.tap(find.text('Usar código de teste 0000'));
++    await tester.pump(const Duration(seconds: 1));
++    await tester.pumpAndSettle();
++    expect(find.text('Sua simulação foi concluída'), findsOneWidget);
++    await tester.ensureVisible(find.text('Abrir comprovante demonstrativo'));
++    await tester.tap(find.text('Abrir comprovante demonstrativo'));
 +    await tester.pumpAndSettle();
 +    expect(find.text('Comprovante de simulação'), findsOneWidget);
 +    expect(find.text('Pessoa de teste'), findsOneWidget);
