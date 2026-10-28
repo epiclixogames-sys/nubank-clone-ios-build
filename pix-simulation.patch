@@ -1,0 +1,504 @@
+diff --git a/lib/pages/pix/pix_demo_screen.dart b/lib/pages/pix/pix_demo_screen.dart
+new file mode 100644
+index 0000000..6455eb8
+--- /dev/null
++++ b/lib/pages/pix/pix_demo_screen.dart
+@@ -0,0 +1,245 @@
++import 'dart:ui' as ui;
++import 'package:flutter/material.dart';
++import 'package:flutter/rendering.dart';
++import 'package:flutter/services.dart';
++import 'package:nubank_clone/constants/app_colors.dart';
++import 'package:nubank_clone/pages/pix/simulated_pix.dart';
++import 'package:share_plus/share_plus.dart';
++
++class PixDemoScreen extends StatefulWidget {
++  const PixDemoScreen({super.key});
++  @override
++  State<PixDemoScreen> createState() => _PixDemoScreenState();
++}
++
++class _PixDemoScreenState extends State<PixDemoScreen> {
++  final _form = GlobalKey<FormState>();
++  final _receiptKey = GlobalKey();
++  final _fields = List.generate(6, (_) => TextEditingController());
++  int _step = 0;
++  SimulatedPix? _receipt;
++  bool _sharing = false;
++
++  @override
++  void dispose() {
++    for (final field in _fields) { field.dispose(); }
++    super.dispose();
++  }
++
++  SimulatedPix _readForm() => SimulatedPix(
++    recipient: _fields[0].text.trim(), pixKey: _fields[1].text.trim(),
++    institution: _fields[2].text.trim(), sender: _fields[3].text.trim(),
++    cents: parsePixAmount(_fields[4].text)!,
++    description: _fields[5].text.trim(), createdAt: DateTime.now(),
++  );
++
++  Future<void> _share(BuildContext buttonContext) async {
++    if (_sharing || _receipt == null) return;
++    setState(() => _sharing = true);
++    ui.Image? image;
++    try {
++      await WidgetsBinding.instance.endOfFrame;
++      if (!mounted || !buttonContext.mounted) return;
++      final boundary = _receiptKey.currentContext!.findRenderObject()
++          as RenderRepaintBoundary;
++      image = await boundary.toImage(pixelRatio: 2);
++      final data = await image.toByteData(format: ui.ImageByteFormat.png);
++      if (data == null || !buttonContext.mounted) return;
++      final box = buttonContext.findRenderObject() as RenderBox;
++      await Share.shareXFiles(
++        [XFile.fromData(data.buffer.asUint8List(), mimeType: 'image/png')],
++        fileNameOverrides: ['comprovante-SIMULACAO.png'],
++        subject: 'Comprovante de simulação — sem valor financeiro',
++        sharePositionOrigin: box.localToGlobal(Offset.zero) & box.size,
++      );
++    } catch (_) {
++      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
++        const SnackBar(content: Text('Não foi possível gerar a imagem. Tente novamente.')),
++      );
++    } finally {
++      image?.dispose();
++      if (mounted) setState(() => _sharing = false);
++    }
++  }
++
++  Widget _button(String label, VoidCallback? onPressed) => SizedBox(
++    width: double.infinity,
++    child: ElevatedButton(
++      style: ElevatedButton.styleFrom(
++        backgroundColor: AppColors.primary, foregroundColor: Colors.white,
++        padding: const EdgeInsets.symmetric(vertical: 16),
++      ),
++      onPressed: onPressed, child: Text(label, textAlign: TextAlign.center),
++    ),
++  );
++
++  Widget _entry() => Form(
++    key: _form, autovalidateMode: AutovalidateMode.onUserInteraction,
++    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
++      Text('Simular um Pix', style: Theme.of(context).textTheme.headlineMedium),
++      const SizedBox(height: 8),
++      const Text('Informe os dados para uma demonstração. A chave não será '
++          'consultada e nenhum dinheiro será transferido.'),
++      const SizedBox(height: 24),
++      for (var i = 0; i < _fields.length; i++) Padding(
++        padding: const EdgeInsets.only(bottom: 16),
++        child: TextFormField(
++          key: ValueKey('pix-field-$i'), controller: _fields[i],
++          maxLength: i == 5 ? 140 : i == 4 ? 16 : 100,
++          autocorrect: false,
++          keyboardType: i == 4
++              ? const TextInputType.numberWithOptions(decimal: true)
++              : TextInputType.text,
++          decoration: InputDecoration(
++            labelText: const ['Nome de quem receberia', 'Chave Pix',
++              'Instituição (opcional)', 'Seu nome (opcional)', 'Valor (R\$)',
++              'Descrição (opcional)'][i],
++            hintText: i == 4 ? '150,00' : null,
++            counterText: '', border: const OutlineInputBorder(),
++          ),
++          validator: (value) {
++            if (i == 4 && parsePixAmount(value ?? '') == null) {
++              return 'Informe um valor positivo. Ex.: 150,00';
++            }
++            if (i < 2 && (value == null || value.trim().isEmpty)) {
++              return 'Preencha este campo';
++            }
++            return null;
++          },
++        ),
++      ),
++      const Text('Os dados ficam nesta sessão. Compartilhar a imagem é opcional.',
++          style: TextStyle(fontSize: 12, color: AppColors.secondaryText)),
++      const SizedBox(height: 20),
++      _button('Revisar simulação', () {
++        if (!_form.currentState!.validate()) return;
++        FocusScope.of(context).unfocus();
++        setState(() => _step = 1);
++      }),
++    ]),
++  );
++
++  Widget _review() {
++    final pix = _readForm();
++    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
++      Text('Revisar simulação', style: Theme.of(context).textTheme.headlineMedium),
++      const SizedBox(height: 24),
++      Text(formatPixAmount(pix.cents),
++          style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold)),
++      const SizedBox(height: 24),
++      ..._details(pix),
++      const Text('Ao continuar, será gerado apenas um comprovante demonstrativo. '
++          'Não haverá débito, transferência ou validação bancária.'),
++      const SizedBox(height: 24),
++      _button('Confirmar simulação', () => setState(() {
++        _receipt = _readForm(); _step = 2;
++      })),
++      TextButton(onPressed: () => setState(() => _step = 0),
++          child: const Text('Editar dados')),
++    ]);
++  }
++
++  Widget _result() => Column(crossAxisAlignment: CrossAxisAlignment.stretch,
++    children: [
++      RepaintBoundary(key: _receiptKey,
++          child: SimulatedPixReceipt(pix: _receipt!)),
++      const SizedBox(height: 20),
++      Builder(builder: (buttonContext) => _button(
++        _sharing ? 'Gerando imagem…' : 'Compartilhar imagem da simulação',
++        _sharing ? null : () => _share(buttonContext),
++      )),
++      TextButton(onPressed: () async {
++        await Clipboard.setData(ClipboardData(text: _receipt!.asText()));
++        if (!mounted) return;
++        ScaffoldMessenger.of(context).showSnackBar(
++          const SnackBar(content: Text('Texto da simulação copiado')),
++        );
++      }, child: const Text('Copiar texto da simulação')),
++      TextButton(onPressed: () => setState(() { _receipt = null; _step = 0; }),
++          child: const Text('Nova simulação')),
++    ],
++  );
++
++  @override
++  Widget build(BuildContext context) => SizedBox(
++    height: MediaQuery.sizeOf(context).height * .94,
++    child: Scaffold(
++      backgroundColor: Colors.white,
++      appBar: AppBar(
++        backgroundColor: Colors.white, foregroundColor: AppColors.text,
++        elevation: 0, title: const Text('Pix • demonstração'),
++        leading: IconButton(
++          tooltip: _step == 1 ? 'Voltar aos dados' : 'Fechar',
++          icon: Icon(_step == 1 ? Icons.arrow_back : Icons.close),
++          onPressed: () {
++            if (_step == 1) { setState(() => _step = 0); }
++            else { Navigator.of(context).pop(); }
++          },
++        ),
++      ),
++      body: SafeArea(top: false, child: Column(children: [
++        const SimulationNotice(),
++        Expanded(child: SingleChildScrollView(
++          key: ValueKey(_step), padding: const EdgeInsets.all(20),
++          child: _step == 0 ? _entry() : _step == 1 ? _review() : _result(),
++        )),
++      ])),
++    ),
++  );
++}
++
++class SimulationNotice extends StatelessWidget {
++  const SimulationNotice({super.key});
++  @override
++  Widget build(BuildContext context) => Container(
++    width: double.infinity, color: const Color(0xffffe0a3),
++    padding: const EdgeInsets.all(12),
++    child: const Text('SIMULAÇÃO — SEM VALOR FINANCEIRO',
++      textAlign: TextAlign.center,
++      style: TextStyle(color: Color(0xff4c2c00),
++          fontWeight: FontWeight.bold, fontSize: 13),
++    ),
++  );
++}
++
++List<Widget> _details(SimulatedPix pix) => pix.details.entries.map((e) => Padding(
++  padding: const EdgeInsets.only(bottom: 16),
++  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
++    Text(e.key, style: const TextStyle(fontSize: 12, color: Color(0xff666666))),
++    const SizedBox(height: 4), Text(e.value, style: const TextStyle(fontSize: 16)),
++  ]),
++)).toList();
++
++class SimulatedPixReceipt extends StatelessWidget {
++  final SimulatedPix pix;
++  const SimulatedPixReceipt({required this.pix, super.key});
++  @override
++  Widget build(BuildContext context) => Material(color: Colors.white,
++    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
++      const SimulationNotice(),
++      Padding(padding: const EdgeInsets.all(20),
++        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
++          const Icon(Icons.science_outlined, size: 40, color: AppColors.primary),
++          const SizedBox(height: 16),
++          const Text('Comprovante de simulação',
++              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
++          const SizedBox(height: 8),
++          const Text('Nenhum pagamento foi realizado.'),
++          const SizedBox(height: 24),
++          Text(formatPixAmount(pix.cents),
++              style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold)),
++          const Divider(height: 40), ..._details(pix),
++          Text('Gerado em: ${pix.dateLabel}'),
++          const SizedBox(height: 12),
++          Text('Referência demonstrativa: ${pix.reference}',
++              style: const TextStyle(fontSize: 12)),
++          const SizedBox(height: 20),
++          const Text('Documento de demonstração. Não é um comprovante bancário '
++              'e não confirma recebimento, débito ou transferência.',
++              style: TextStyle(fontSize: 12)),
++        ]),
++      ),
++      const SimulationNotice(),
++    ]),
++  );
++}
+diff --git a/lib/pages/pix/pix_screen.dart b/lib/pages/pix/pix_screen.dart
+index 3996da9..eaf2e7c 100644
+--- a/lib/pages/pix/pix_screen.dart
++++ b/lib/pages/pix/pix_screen.dart
+@@ -1,83 +1,9 @@
+ import 'package:flutter/material.dart';
+-import 'package:material_design_icons_flutter/material_design_icons_flutter.dart';
+-import 'package:nubank_clone/constants/app_colors.dart';
+-import 'package:nubank_clone/constants/assets.gen.dart';
+-import 'package:nubank_clone/constants/nu_icons.dart';
+-import 'package:nubank_clone/pages/pix/widgets/pix_menu.dart';
+-import 'package:nubank_clone/utils/extensions/router_context_extension.dart';
+-import 'package:nubank_clone/widgets/label_button.dart';
++import 'package:nubank_clone/pages/pix/pix_demo_screen.dart';
+ 
+ class PixScreen extends StatelessWidget {
+   const PixScreen({super.key});
+ 
+   @override
+-  Widget build(BuildContext context) {
+-    return Container(
+-      color: Colors.white,
+-      height: MediaQuery.of(context).size.height - 50,
+-      child: Column(
+-        crossAxisAlignment: CrossAxisAlignment.start,
+-        children: [
+-          IconButton(
+-            onPressed: () => context.pop(),
+-            icon: const Icon(NuIcons.close, color: AppColors.secondaryText),
+-          ),
+-          const SizedBox(height: 15),
+-          Expanded(
+-            child: Padding(
+-              padding: const EdgeInsets.symmetric(horizontal: 25),
+-              child: Column(
+-                crossAxisAlignment: CrossAxisAlignment.start,
+-                children: [
+-                  Assets.images.pix.image(
+-                    height: 150,
+-                  ),
+-                  const SizedBox(height: 30),
+-                  Text(
+-                    'Minha área Pix',
+-                    style: Theme.of(context).textTheme.headlineMedium,
+-                  ),
+-                  const SizedBox(height: 10),
+-                  Text(
+-                    'Tudo o que você precisa para pagar, transferir ou cobrar.',
+-                    style: Theme.of(context).textTheme.titleMedium,
+-                  ),
+-                  const SizedBox(height: 45),
+-                  Row(
+-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+-                    children: [
+-                      LabelButton(
+-                        'Pagar',
+-                        MdiIcons.arrangeSendToBack,
+-                        onPressed: () {},
+-                      ),
+-                      LabelButton(
+-                        'Transferir',
+-                        MdiIcons.cubeSend,
+-                        onPressed: () {},
+-                      ),
+-                      LabelButton(
+-                        'Cobrar',
+-                        MdiIcons.messageAlertOutline,
+-                        onPressed: () {},
+-                      ),
+-                    ],
+-                  ),
+-                  const SizedBox(height: 20),
+-                ],
+-              ),
+-            ),
+-          ),
+-          Container(height: 1, color: AppColors.line),
+-          const Column(
+-            children: [
+-              PixMenu('Minhas chaves', MdiIcons.keyChain),
+-              PixMenu('Meu limite Pix', MdiIcons.tuneVariant),
+-              PixMenu('Me ajuda', MdiIcons.helpCircleOutline),
+-            ],
+-          ),
+-        ],
+-      ),
+-    );
+-  }
++  Widget build(BuildContext context) => const PixDemoScreen();
+ }
+diff --git a/lib/pages/pix/simulated_pix.dart b/lib/pages/pix/simulated_pix.dart
+new file mode 100644
+index 0000000..99432fd
+--- /dev/null
++++ b/lib/pages/pix/simulated_pix.dart
+@@ -0,0 +1,63 @@
++/// Parse Brazilian currency into integer cents without rounding errors.
++int? parsePixAmount(String input) {
++  final text = input.trim().replaceFirst(RegExp(r'^R\$\s*'), '');
++  if (!RegExp(r'^(?:\d+|\d{1,3}(?:\.\d{3})+)(?:,\d{1,2})?$')
++      .hasMatch(text)) return null;
++  final parts = text.replaceAll('.', '').split(',');
++  final reais = int.tryParse(parts[0]);
++  if (reais == null || reais > 99999999) return null;
++  final cents = reais * 100 +
++      (parts.length == 2 ? int.parse(parts[1].padRight(2, '0')) : 0);
++  return cents > 0 ? cents : null;
++}
++
++String formatPixAmount(int cents) {
++  final digits = (cents ~/ 100).toString();
++  final grouped = digits.replaceAllMapped(
++    RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (match) => '${match[1]}.',
++  );
++  return 'R\$ $grouped,${(cents % 100).toString().padLeft(2, '0')}';
++}
++
++class SimulatedPix {
++  final String recipient, pixKey, institution, sender, description;
++  final int cents;
++  final DateTime createdAt;
++
++  const SimulatedPix({
++    required this.recipient,
++    required this.pixKey,
++    required this.cents,
++    required this.createdAt,
++    this.institution = '',
++    this.sender = '',
++    this.description = '',
++  });
++
++  String get reference => 'SIM-${createdAt.microsecondsSinceEpoch}';
++  String get dateLabel {
++    String two(int n) => n.toString().padLeft(2, '0');
++    return '${two(createdAt.day)}/${two(createdAt.month)}/${createdAt.year} '
++        '${two(createdAt.hour)}:${two(createdAt.minute)}';
++  }
++
++  Map<String, String> get details => {
++    'Destinatário informado': recipient,
++    'Chave informada (não verificada)': pixKey,
++    if (institution.isNotEmpty) 'Instituição informada': institution,
++    if (sender.isNotEmpty) 'Remetente informado': sender,
++    if (description.isNotEmpty) 'Descrição': description,
++  };
++
++  String asText() => [
++    'SIMULAÇÃO — SEM VALOR FINANCEIRO',
++    'Comprovante de simulação',
++    'Nenhum pagamento foi realizado.',
++    'Valor: ${formatPixAmount(cents)}',
++    ...details.entries.map((e) => '${e.key}: ${e.value}'),
++    'Gerado em: $dateLabel',
++    'Referência demonstrativa: $reference',
++    'Documento de demonstração. Não é um comprovante bancário.',
++    'SIMULAÇÃO — SEM VALOR FINANCEIRO',
++  ].join('\n');
++}
+diff --git a/pubspec.yaml b/pubspec.yaml
+index 2319967..0f48649 100644
+--- a/pubspec.yaml
++++ b/pubspec.yaml
+@@ -7,6 +7,7 @@ environment:
+   sdk: ">=3.1.0 <4.0.0"
+ 
+ dependencies:
++  share_plus: 10.1.4
+   bootstrap_icons: ^1.11.3
+   flutter_masked_text2: ^0.9.1
+   flutter_native_splash: ^2.4.3
+diff --git a/test/simulated_pix_test.dart b/test/simulated_pix_test.dart
+new file mode 100644
+index 0000000..5542c76
+--- /dev/null
++++ b/test/simulated_pix_test.dart
+@@ -0,0 +1,76 @@
++import 'dart:io';
++import 'dart:ui' as ui;
++import 'package:flutter/material.dart';
++import 'package:flutter/rendering.dart';
++import 'package:flutter_test/flutter_test.dart';
++import 'package:nubank_clone/pages/pix/pix_screen.dart';
++import 'package:nubank_clone/pages/pix/pix_demo_screen.dart';
++import 'package:nubank_clone/pages/pix/simulated_pix.dart';
++
++void main() {
++  test('Brazilian currency preserves cents without rounding', () {
++    expect(parsePixAmount('1.234,56'), 123456);
++    expect(parsePixAmount('R\$ 0,01'), 1);
++    expect(parsePixAmount('150,5'), 15050);
++    expect(formatPixAmount(123456), 'R\$ 1.234,56');
++    for (final value in ['', '0', '-10', '1.23', '1,999', 'NaN', '100000000']) {
++      expect(parsePixAmount(value), isNull, reason: value);
++    }
++  });
++  final sample = SimulatedPix(recipient: 'Pessoa de teste',
++    pixKey: 'exemplo@example.com', cents: 15050,
++    createdAt: DateTime(2026, 10, 28, 15, 30));
++  test('copied receipt identifies itself as simulation', () {
++    final text = sample.asText();
++    expect(text.startsWith('SIMULAÇÃO — SEM VALOR FINANCEIRO'), isTrue);
++    expect(text.endsWith('SIMULAÇÃO — SEM VALOR FINANCEIRO'), isTrue);
++    expect(text, contains('Nenhum pagamento foi realizado.'));
++    expect(sample.reference, startsWith('SIM-'));
++    expect(sample.dateLabel, '28/10/2026 15:30');
++  });
++  testWidgets('receipt image includes both simulation notices', (tester) async {
++    final captureKey = GlobalKey();
++    await tester.pumpWidget(MaterialApp(home: Scaffold(
++      body: SingleChildScrollView(child: RepaintBoundary(key: captureKey,
++          child: SizedBox(width: 393, child: SimulatedPixReceipt(pix: sample)))))));
++    await tester.pumpAndSettle();
++    expect(find.text('SIMULAÇÃO — SEM VALOR FINANCEIRO'), findsNWidgets(2));
++    expect(find.text('Comprovante de simulação'), findsOneWidget);
++    expect(find.text('Nenhum pagamento foi realizado.'), findsOneWidget);
++    await tester.runAsync(() async {
++      final boundary = captureKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
++      final image = await boundary.toImage(pixelRatio: 2);
++      final png = await image.toByteData(format: ui.ImageByteFormat.png);
++      expect(png, isNotNull);
++      await Directory('test-output').create(recursive: true);
++      await File('test-output/comprovante-SIMULACAO-preview.png')
++          .writeAsBytes(png!.buffer.asUint8List());
++      image.dispose();
++    });
++  });
++  testWidgets('empty form cannot advance to confirmation', (tester) async {
++    await tester.pumpWidget(const MaterialApp(home: PixScreen()));
++    final button = find.text('Revisar simulação');
++    await tester.ensureVisible(button);
++    await tester.tap(button);
++    await tester.pumpAndSettle();
++    expect(find.text('Preencha este campo'), findsNWidgets(2));
++    expect(find.text('Confirmar simulação'), findsNothing);
++  });
++  testWidgets('entered details survive review and receipt generation', (tester) async {
++    await tester.pumpWidget(const MaterialApp(home: PixScreen()));
++    await tester.enterText(find.byKey(const ValueKey('pix-field-0')), 'Pessoa de teste');
++    await tester.enterText(find.byKey(const ValueKey('pix-field-1')), 'exemplo@example.com');
++    await tester.enterText(find.byKey(const ValueKey('pix-field-4')), '150,50');
++    await tester.ensureVisible(find.text('Revisar simulação'));
++    await tester.tap(find.text('Revisar simulação'));
++    await tester.pumpAndSettle();
++    expect(find.text('R\$ 150,50'), findsOneWidget);
++    await tester.ensureVisible(find.text('Confirmar simulação'));
++    await tester.tap(find.text('Confirmar simulação'));
++    await tester.pumpAndSettle();
++    expect(find.text('Comprovante de simulação'), findsOneWidget);
++    expect(find.text('Pessoa de teste'), findsOneWidget);
++    expect(find.text('SIMULAÇÃO — SEM VALOR FINANCEIRO'), findsNWidgets(3));
++  });
++}
