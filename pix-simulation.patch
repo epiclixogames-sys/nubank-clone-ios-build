@@ -1,19 +1,302 @@
+diff --git a/lib/app.dart b/lib/app.dart
+index 4daa8eb..73fda16 100644
+--- a/lib/app.dart
++++ b/lib/app.dart
+@@ -25,7 +25,7 @@ class App extends StatelessWidget {
+     return ChangeNotifierProvider(
+       create: (context) => AppState(),
+       child: MaterialApp(
+-        title: 'Nubank Clone',
++        title: 'Banco Acadêmico',
+         debugShowCheckedModeBanner: false,
+         theme: ThemeData(
+           useMaterial3: false,
+diff --git a/lib/pages/home/home_screen.dart b/lib/pages/home/home_screen.dart
+index 0ebaa03..5dfee7b 100644
+--- a/lib/pages/home/home_screen.dart
++++ b/lib/pages/home/home_screen.dart
+@@ -18,7 +18,6 @@ import 'package:nubank_clone/pages/payment/payment_screen.dart';
+ import 'package:nubank_clone/pages/pix/pix_screen.dart';
+ import 'package:nubank_clone/pages/recharge/recharge_screen.dart';
+ import 'package:nubank_clone/pages/refer/refer_screen.dart';
+-import 'package:nubank_clone/pages/transfer/transfer_screen.dart';
+ import 'package:nubank_clone/utils/extensions/router_context_extension.dart';
+ import 'package:nubank_clone/widgets/circle_button.dart';
+ import 'package:nubank_clone/widgets/label_button.dart';
+@@ -112,6 +111,9 @@ class HomeScreen extends StatelessWidget {
+                 .titleMedium
+                 ?.copyWith(color: Colors.white, fontWeight: FontWeight.w600),
+           ),
++          const SizedBox(height: 8),
++          const Text('Protótipo acadêmico',
++              style: TextStyle(color: Colors.white, fontSize: 12)),
+         ],
+       ),
+     );
+@@ -148,7 +150,7 @@ class HomeScreen extends StatelessWidget {
+                 LabelButton(
+                   'Transferir',
+                   NuIcons.ic_savings_global_action_transfer_out,
+-                  onPressed: () => context.showBottomSheet(TransferScreen()),
++                  onPressed: () => context.showBottomSheet(const PixScreen()),
+                 ),
+                 LabelButton(
+                   'Depositar',
+diff --git a/lib/pages/pix/contact_book_screen.dart b/lib/pages/pix/contact_book_screen.dart
+new file mode 100644
+index 0000000..4eec236
+--- /dev/null
++++ b/lib/pages/pix/contact_book_screen.dart
+@@ -0,0 +1,159 @@
++import 'package:flutter/material.dart';
++import 'package:nubank_clone/constants/app_colors.dart';
++import 'package:nubank_clone/pages/pix/local_pix_contacts.dart';
++
++class ContactBookScreen extends StatefulWidget {
++  final List<LocalPixContact> contacts;
++  final LocalContactStorage storage;
++  const ContactBookScreen({required this.contacts, required this.storage, super.key});
++  @override
++  State<ContactBookScreen> createState() => _ContactBookScreenState();
++}
++
++class _ContactBookScreenState extends State<ContactBookScreen> {
++  late List<LocalPixContact> _contacts;
++  bool _saving = false;
++  @override
++  void initState() { super.initState(); _contacts = List.of(widget.contacts); }
++
++  Future<void> _persist(List<LocalPixContact> next) async {
++    setState(() => _saving = true);
++    try {
++      await widget.storage.save(next);
++      if (mounted) setState(() => _contacts = next);
++    } catch (_) {
++      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
++        const SnackBar(content: Text('Não foi possível salvar os contatos. Tente novamente.')),
++      );
++    } finally { if (mounted) setState(() => _saving = false); }
++  }
++
++  Future<void> _edit([LocalPixContact? contact]) async {
++    final result = await showDialog<LocalPixContact>(context: context,
++      builder: (_) => _ContactEditor(contact: contact, contacts: _contacts));
++    if (result == null || !mounted) return;
++    await _persist([..._contacts.where((c) => c.id != result.id), result]
++      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase())));
++  }
++
++  Future<void> _remove(LocalPixContact contact) async {
++    final remove = await showDialog<bool>(context: context, builder: (dialogContext) =>
++      AlertDialog(title: const Text('Excluir contato?'),
++        content: Text('Remover ${contact.name} deste aplicativo?'),
++        actions: [TextButton(onPressed: () => Navigator.pop(dialogContext, false),
++            child: const Text('Cancelar')),
++          TextButton(onPressed: () => Navigator.pop(dialogContext, true),
++            child: const Text('Excluir'))]));
++    if (remove == true && mounted) {
++      await _persist(_contacts.where((c) => c.id != contact.id).toList());
++    }
++  }
++
++  @override
++  Widget build(BuildContext context) => Scaffold(
++    appBar: AppBar(title: const Text('Meus contatos'), backgroundColor: Colors.white,
++        foregroundColor: Colors.black, elevation: 0),
++    backgroundColor: Colors.white,
++    body: Column(children: [
++      const Padding(padding: EdgeInsets.all(20), child: Text(
++        'Cadastre somente dados próprios ou autorizados. A pesquisa usa apenas '
++        'estes contatos salvos no aplicativo; não consulta bancos ou o Pix.',
++        style: TextStyle(color: Color(0xff666666), fontSize: 13))),
++      if (_saving) const LinearProgressIndicator(),
++      Expanded(child: _contacts.isEmpty
++        ? const Center(child: Text('Nenhum contato cadastrado.'))
++        : ListView.builder(itemCount: _contacts.length, itemBuilder: (context, index) {
++          final contact = _contacts[index];
++          return ListTile(
++            leading: CircleAvatar(backgroundColor: const Color(0xffeeeeee),
++              child: Text(contact.name.substring(0, 1).toUpperCase(),
++                  style: const TextStyle(color: Colors.black))),
++            title: Text(contact.name), subtitle: Text(contact.subtitle),
++            onTap: _saving ? null : () => _edit(contact),
++            trailing: IconButton(tooltip: 'Excluir ${contact.name}',
++              icon: const Icon(Icons.delete_outline),
++              onPressed: _saving ? null : () => _remove(contact)),
++          );
++        })),
++    ]),
++    floatingActionButton: FloatingActionButton.extended(
++      backgroundColor: AppColors.primary, foregroundColor: Colors.white,
++      onPressed: _saving ? null : () => _edit(),
++      icon: const Icon(Icons.person_add_outlined), label: const Text('Novo contato')),
++  );
++}
++
++class _ContactEditor extends StatefulWidget {
++  final LocalPixContact? contact;
++  final List<LocalPixContact> contacts;
++  const _ContactEditor({this.contact, required this.contacts});
++  @override
++  State<_ContactEditor> createState() => _ContactEditorState();
++}
++
++class _ContactEditorState extends State<_ContactEditor> {
++  final _form = GlobalKey<FormState>();
++  late List<TextEditingController> _fields;
++  String? _error;
++  @override
++  void initState() {
++    super.initState(); final c = widget.contact;
++    _fields = [c?.name ?? '', c?.institution ?? '', c?.cpf ?? '',
++      c?.phone ?? '', c?.email ?? ''].map((s) => TextEditingController(text: s)).toList();
++  }
++  @override
++  void dispose() { for (final c in _fields) { c.dispose(); } super.dispose(); }
++
++  void _save() {
++    if (!_form.currentState!.validate()) return;
++    final contact = LocalPixContact(
++      id: widget.contact?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
++      name: _fields[0].text.trim(), institution: _fields[1].text.trim(),
++      cpf: _fields[2].text.trim(), phone: _fields[3].text.trim(),
++      email: _fields[4].text.trim().toLowerCase(),
++    );
++    if (contact.keys.isEmpty) {
++      setState(() => _error = 'Informe pelo menos CPF, telefone ou e-mail.'); return;
++    }
++    if (hasConflictingKeys(contact, widget.contacts)) {
++      setState(() => _error = 'Uma dessas chaves já pertence a outro contato.'); return;
++    }
++    Navigator.pop(context, contact);
++  }
++
++  @override
++  Widget build(BuildContext context) => AlertDialog(
++    title: Text(widget.contact == null ? 'Novo contato' : 'Editar contato'),
++    scrollable: true,
++    content: Form(key: _form, child: Column(mainAxisSize: MainAxisSize.min, children: [
++      for (var i = 0; i < _fields.length; i++) Padding(
++        padding: const EdgeInsets.only(bottom: 12),
++        child: TextFormField(key: ValueKey('contact-field-$i'), controller: _fields[i],
++          maxLength: 100, autocorrect: false,
++          keyboardType: i == 4 ? TextInputType.emailAddress
++              : i == 2 || i == 3 ? TextInputType.phone : TextInputType.text,
++          decoration: InputDecoration(labelText: const ['Nome', 'Instituição (opcional)',
++            'CPF (opcional)', 'Telefone (opcional)', 'E-mail (opcional)'][i], counterText: ''),
++          validator: (value) {
++            final text = (value ?? '').trim();
++            if (i == 0 && text.isEmpty) return 'Informe o nome';
++            if (text.isEmpty) return null;
++            if (i == 2 && !RegExp(r'^\d{11}$').hasMatch(normalizeContactKey(text))) {
++              return 'Informe um CPF com 11 dígitos';
++            }
++            if (i == 3 && !RegExp(r'^\d{10,11}$').hasMatch(normalizeContactKey(text))) {
++              return 'Informe telefone com DDD';
++            }
++            if (i == 4 && !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(text)) {
++              return 'Informe um e-mail válido';
++            }
++            return null;
++          },
++        ),
++      ),
++      if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
++    ])),
++    actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
++      TextButton(onPressed: _save, child: const Text('Salvar contato'))],
++  );
++}
+diff --git a/lib/pages/pix/local_pix_contacts.dart b/lib/pages/pix/local_pix_contacts.dart
+new file mode 100644
+index 0000000..bf6ebd7
+--- /dev/null
++++ b/lib/pages/pix/local_pix_contacts.dart
+@@ -0,0 +1,65 @@
++import 'dart:convert';
++import 'package:shared_preferences/shared_preferences.dart';
++
++String normalizeContactKey(String input) {
++  final text = input.trim().toLowerCase();
++  if (text.contains('@')) return text;
++  if (!RegExp(r'^[\d\s()+.\-]+$').hasMatch(text)) return text;
++  var digits = text.replaceAll(RegExp(r'\D'), '');
++  if (digits.length == 13 && digits.startsWith('55')) {
++    digits = digits.substring(2);
++  }
++  return digits;
++}
++
++class LocalPixContact {
++  final String id, name, institution, cpf, phone, email;
++  const LocalPixContact({required this.id, required this.name,
++    this.institution = '', this.cpf = '', this.phone = '', this.email = ''});
++
++  Set<String> get keys => [cpf, phone, email]
++      .where((key) => key.trim().isNotEmpty)
++      .map(normalizeContactKey).toSet();
++  String get subtitle => email.isNotEmpty ? email : phone.isNotEmpty ? phone : cpf;
++  Map<String, String> toJson() => {'id': id, 'name': name,
++    'institution': institution, 'cpf': cpf, 'phone': phone, 'email': email};
++  factory LocalPixContact.fromJson(Map<String, dynamic> json) => LocalPixContact(
++    id: json['id'] as String, name: json['name'] as String,
++    institution: json['institution'] as String? ?? '',
++    cpf: json['cpf'] as String? ?? '', phone: json['phone'] as String? ?? '',
++    email: json['email'] as String? ?? '',
++  );
++}
++
++LocalPixContact? findLocalContact(List<LocalPixContact> contacts, String key) {
++  final normalized = normalizeContactKey(key);
++  if (normalized.isEmpty) return null;
++  final matches = contacts.where((contact) => contact.keys.contains(normalized));
++  return matches.length == 1 ? matches.single : null;
++}
++
++bool hasConflictingKeys(LocalPixContact candidate, List<LocalPixContact> contacts) =>
++    contacts.any((other) => other.id != candidate.id &&
++        other.keys.intersection(candidate.keys).isNotEmpty);
++
++abstract class LocalContactStorage {
++  Future<List<LocalPixContact>> load();
++  Future<void> save(List<LocalPixContact> contacts);
++}
++
++class PreferencesContactStorage implements LocalContactStorage {
++  final SharedPreferencesAsync _preferences = SharedPreferencesAsync();
++  static const _key = 'pix_academic_contacts_v1';
++  @override
++  Future<List<LocalPixContact>> load() async {
++    final data = await _preferences.getString(_key);
++    if (data == null) return [];
++    final list = jsonDecode(data) as List;
++    return list.map((item) => LocalPixContact.fromJson(
++        Map<String, dynamic>.from(item as Map))).toList();
++  }
++  @override
++  Future<void> save(List<LocalPixContact> contacts) => _preferences.setString(
++    _key, jsonEncode(contacts.map((contact) => contact.toJson()).toList()),
++  );
++}
 diff --git a/lib/pages/pix/pix_demo_screen.dart b/lib/pages/pix/pix_demo_screen.dart
 new file mode 100644
-index 0000000..11b33b4
+index 0000000..4bfc23f
 --- /dev/null
 +++ b/lib/pages/pix/pix_demo_screen.dart
-@@ -0,0 +1,417 @@
+@@ -0,0 +1,493 @@
 +import 'dart:ui' as ui;
 +import 'package:flutter/material.dart';
 +import 'package:flutter/rendering.dart';
 +import 'package:flutter/services.dart';
 +import 'package:nubank_clone/constants/app_colors.dart';
 +import 'package:nubank_clone/pages/pix/simulated_pix.dart';
++import 'package:nubank_clone/pages/pix/local_pix_contacts.dart';
++import 'package:nubank_clone/pages/pix/contact_book_screen.dart';
 +import 'package:share_plus/share_plus.dart';
 +
 +class PixDemoScreen extends StatefulWidget {
-+  const PixDemoScreen({super.key});
++  final LocalContactStorage? contactStorage;
++  const PixDemoScreen({this.contactStorage, super.key});
 +  @override
 +  State<PixDemoScreen> createState() => _PixDemoScreenState();
 +}
@@ -22,12 +305,63 @@ index 0000000..11b33b4
 +  final _form = GlobalKey<FormState>();
 +  final _receiptKey = GlobalKey();
 +  final _fields = List.generate(6, (_) => TextEditingController());
++  final _code = TextEditingController();
++  late LocalContactStorage _contactStorage;
++  List<LocalPixContact> _contacts = [];
++  LocalPixContact? _matchedContact;
++  bool _contactsLoading = true;
++  String? _contactsError;
 +  int _step = -1;
 +  SimulatedPix? _receipt;
 +  bool _sharing = false;
 +
 +  @override
++  void initState() {
++    super.initState();
++    _contactStorage = widget.contactStorage ?? PreferencesContactStorage();
++    _fields[1].addListener(_lookupContact);
++    _loadContacts();
++  }
++
++  Future<void> _loadContacts() async {
++    try {
++      final contacts = await _contactStorage.load();
++      if (!mounted) return;
++      setState(() { _contacts = contacts; _contactsError = null; _contactsLoading = false; });
++      _lookupContact();
++    } catch (_) {
++      if (mounted) setState(() {
++        _contactsLoading = false;
++        _contactsError = 'Não foi possível ler seus contatos locais.';
++      });
++    }
++  }
++
++  void _lookupContact() {
++    final match = findLocalContact(_contacts, _fields[1].text);
++    if (match?.id == _matchedContact?.id && match?.name == _matchedContact?.name &&
++        match?.institution == _matchedContact?.institution) return;
++    final previous = _matchedContact;
++    if (match != null) {
++      _fields[0].text = match.name;
++      _fields[2].text = match.institution;
++    } else if (previous != null) {
++      if (_fields[0].text == previous.name) _fields[0].clear();
++      if (_fields[2].text == previous.institution) _fields[2].clear();
++    }
++    if (mounted) setState(() => _matchedContact = match);
++  }
++
++  Future<void> _manageContacts() async {
++    await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) =>
++      ContactBookScreen(contacts: _contacts, storage: _contactStorage)));
++    if (mounted) await _loadContacts();
++  }
++
++  @override
 +  void dispose() {
++    _fields[1].removeListener(_lookupContact);
++    _code.dispose();
 +    for (final field in _fields) { field.dispose(); }
 +    super.dispose();
 +  }
@@ -54,8 +388,8 @@ index 0000000..11b33b4
 +      final box = buttonContext.findRenderObject() as RenderBox;
 +      await Share.shareXFiles(
 +        [XFile.fromData(data.buffer.asUint8List(), mimeType: 'image/png')],
-+        fileNameOverrides: ['comprovante-SIMULACAO.png'],
-+        subject: 'Comprovante de simulação — sem valor financeiro',
++        fileNameOverrides: ['resumo-prototipo-academico.png'],
++        subject: 'Resumo da atividade — protótipo acadêmico',
 +        sharePositionOrigin: box.localToGlobal(Offset.zero) & box.size,
 +      );
 +    } catch (_) {
@@ -128,6 +462,14 @@ index 0000000..11b33b4
 +        ]),
 +      ),
 +      const SizedBox(height: 28), const Divider(),
++      ListTile(contentPadding: EdgeInsets.zero,
++        title: const Text('Meus contatos'), subtitle: Text(_contactsLoading
++          ? 'Carregando…' : '${_contacts.length} contatos neste aplicativo'),
++        leading: const Icon(Icons.contacts_outlined),
++        trailing: const Icon(Icons.chevron_right),
++        onTap: _contactsLoading ? null : _manageContacts),
++      if (_contactsError != null) Text(_contactsError!,
++          style: const TextStyle(color: Colors.red, fontSize: 12)),
 +      const Padding(padding: EdgeInsets.symmetric(vertical: 16),
 +        child: Text('Preferências', style: TextStyle(fontSize: 18, color: Colors.grey))),
 +    ],
@@ -136,11 +478,19 @@ index 0000000..11b33b4
 +  Widget _entry() => Form(
 +    key: _form, autovalidateMode: AutovalidateMode.onUserInteraction,
 +    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-+      const Text('Para quem você quer\ntransferir na simulação?',
++      const Text('Para quem você quer\ntransferir?',
 +          style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
 +      const SizedBox(height: 8),
-+      const Text('Informe os dados para uma demonstração. A chave não será '
-+          'consultada e nenhum dinheiro será transferido.'),
++      const Text('Pesquise pelo CPF, telefone ou e-mail cadastrado em Meus contatos. '
++          'A busca usa apenas dados salvos neste aplicativo.'),
++      TextButton.icon(onPressed: _contactsLoading ? null : _manageContacts,
++        icon: const Icon(Icons.person_add_outlined), label: const Text('Gerenciar contatos')),
++      if (_matchedContact != null) Container(
++        padding: const EdgeInsets.all(12),
++        decoration: BoxDecoration(color: const Color(0xfff2ecfa),
++            borderRadius: BorderRadius.circular(12)),
++        child: Text('Contato local encontrado: ${_matchedContact!.name}'),
++      ),
 +      const SizedBox(height: 24),
 +      for (final i in [1, 0, 2, 3, 4, 5]) Padding(
 +        padding: const EdgeInsets.only(bottom: 16),
@@ -170,10 +520,11 @@ index 0000000..11b33b4
 +          },
 +        ),
 +      ),
-+      const Text('Os dados ficam nesta sessão. Compartilhar a imagem é opcional.',
++      const Text('Os dados da atividade ficam nesta sessão. Os contatos cadastrados '
++          'ficam salvos no aplicativo. Compartilhar a imagem é opcional.',
 +          style: TextStyle(fontSize: 12, color: AppColors.secondaryText)),
 +      const SizedBox(height: 20),
-+      _button('Revisar simulação', () {
++      _button('Revisar', () {
 +        if (!_form.currentState!.validate()) return;
 +        FocusScope.of(context).unfocus();
 +        setState(() => _step = 1);
@@ -184,7 +535,7 @@ index 0000000..11b33b4
 +  Widget _review() {
 +    final pix = _readForm();
 +    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-+      const Text('Você vai simular',
++      const Text('Revise os detalhes',
 +          style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold)),
 +      const SizedBox(height: 24),
 +      Text(formatPixAmount(pix.cents),
@@ -211,7 +562,7 @@ index 0000000..11b33b4
 +          subtitle: Text('Agora, sem repetir'),
 +          trailing: Icon(Icons.calendar_month_outlined, color: AppColors.primary)),
 +      const ListTile(contentPadding: EdgeInsets.zero, title: Text('Via'),
-+          subtitle: Text('Pix • simulação'),
++          subtitle: Text('Pix • protótipo'),
 +          trailing: Icon(Icons.edit_outlined, color: AppColors.primary)),
 +      ListTile(contentPadding: EdgeInsets.zero, title: const Text('Mensagem'),
 +          subtitle: Text(pix.description.isEmpty ? 'Sem mensagem' : pix.description),
@@ -220,7 +571,7 @@ index 0000000..11b33b4
 +      const Text('Ao continuar, será gerado apenas um comprovante demonstrativo. '
 +          'Não haverá débito, transferência ou validação bancária.'),
 +      const SizedBox(height: 24),
-+      _button('Confirmar simulação', () => setState(() => _step = 3)),
++      _button('Confirmar atividade', () => setState(() => _step = 3)),
 +      TextButton(onPressed: () => setState(() => _step = 0),
 +          child: const Text('Editar dados')),
 +    ]);
@@ -228,20 +579,26 @@ index 0000000..11b33b4
 +
 +  Widget _testConfirmation() => Column(
 +    crossAxisAlignment: CrossAxisAlignment.start, children: [
-+      const Text('Confirme com o código\nde demonstração',
++      const Text('Código da atividade',
 +          style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
 +      const SizedBox(height: 20),
-+      const Text('Este teste usa o código fixo 0000. '
-+          'Não informe a senha do seu cartão ou da sua conta.',
++      const Text('Digite quaisquer quatro dígitos fictícios. '
++          'Não use a senha do seu cartão ou da sua conta.',
 +          style: TextStyle(fontSize: 18, color: AppColors.secondaryText)),
 +      const SizedBox(height: 60),
-+      const Row(mainAxisAlignment: MainAxisAlignment.spaceAround,
-+          children: [Text('0', style: TextStyle(fontSize: 30)),
-+            Text('0', style: TextStyle(fontSize: 30)),
-+            Text('0', style: TextStyle(fontSize: 30)),
-+            Text('0', style: TextStyle(fontSize: 30))]),
++      TextField(key: const ValueKey('academic-code'), controller: _code,
++        keyboardType: TextInputType.number,
++        inputFormatters: [FilteringTextInputFormatter.digitsOnly,
++          LengthLimitingTextInputFormatter(4)],
++        textAlign: TextAlign.center,
++        style: const TextStyle(fontSize: 32, letterSpacing: 20),
++        decoration: const InputDecoration(hintText: '• • • •',
++          helperText: 'Código fictício; não será armazenado'),
++        onChanged: (_) => setState(() {})),
 +      const SizedBox(height: 60),
-+      _button('Usar código de teste 0000', () async {
++      _button('Continuar', _code.text.length != 4 ? null : () async {
++        FocusScope.of(context).unfocus();
++        _code.clear();
 +        setState(() => _step = 4);
 +        await Future<void>.delayed(const Duration(milliseconds: 900));
 +        if (!mounted) return;
@@ -253,9 +610,9 @@ index 0000000..11b33b4
 +  Widget _processing() => const Padding(
 +    padding: EdgeInsets.only(top: 150),
 +    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-+      Text('Simulando…', style: TextStyle(fontSize: 32, color: Colors.grey)),
++      Text('Preparando…', style: TextStyle(fontSize: 32, color: Colors.grey)),
 +      SizedBox(height: 36),
-+      Text('Gerando comprovante\nde demonstração…',
++      Text('Gerando resumo\nda atividade…',
 +          style: TextStyle(fontSize: 34, fontWeight: FontWeight.bold)),
 +      SizedBox(height: 40),
 +      LinearProgressIndicator(value: .7, color: AppColors.primary),
@@ -267,7 +624,7 @@ index 0000000..11b33b4
 +      const Padding(padding: EdgeInsets.symmetric(vertical: 30),
 +        child: CircleAvatar(radius: 44, backgroundColor: Color(0xffe3dfff),
 +          child: Icon(Icons.check, color: AppColors.primary, size: 54))),
-+      const Text('Sua simulação foi concluída',
++      const Text('Atividade concluída',
 +          style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
 +      const SizedBox(height: 32),
 +      Text(formatPixAmount(_receipt!.cents),
@@ -278,7 +635,7 @@ index 0000000..11b33b4
 +      ..._details(_receipt!),
 +      const Text('Nenhum pagamento foi realizado.'),
 +      const SizedBox(height: 32),
-+      _button('Abrir comprovante demonstrativo', () => setState(() => _step = 2)),
++      _button('Abrir resumo da atividade', () => setState(() => _step = 2)),
 +    ],
 +  );
 +
@@ -288,18 +645,18 @@ index 0000000..11b33b4
 +          child: SimulatedPixReceipt(pix: _receipt!)),
 +      const SizedBox(height: 20),
 +      Builder(builder: (buttonContext) => _button(
-+        _sharing ? 'Gerando imagem…' : 'Compartilhar imagem da simulação',
++        _sharing ? 'Gerando imagem…' : 'Compartilhar resumo',
 +        _sharing ? null : () => _share(buttonContext),
 +      )),
 +      TextButton(onPressed: () async {
 +        await Clipboard.setData(ClipboardData(text: _receipt!.asText()));
 +        if (!mounted) return;
 +        ScaffoldMessenger.of(context).showSnackBar(
-+          const SnackBar(content: Text('Texto da simulação copiado')),
++          const SnackBar(content: Text('Resumo copiado')),
 +        );
-+      }, child: const Text('Copiar texto da simulação')),
++      }, child: const Text('Copiar resumo')),
 +      TextButton(onPressed: () => setState(() { _receipt = null; _step = 0; }),
-+          child: const Text('Nova simulação')),
++          child: const Text('Nova atividade')),
 +    ],
 +  );
 +
@@ -310,14 +667,14 @@ index 0000000..11b33b4
 +      backgroundColor: Colors.white,
 +      appBar: AppBar(
 +        backgroundColor: Colors.white, foregroundColor: AppColors.text,
-+        elevation: 0, title: const Text('Demonstração'),
++        elevation: 0, title: const Text('Área Pix'),
 +        leading: IconButton(
 +          tooltip: _step >= 0 ? 'Voltar' : 'Fechar',
 +          icon: Icon(_step >= 0 ? Icons.arrow_back : Icons.close),
 +          onPressed: () {
 +            if (_step == 1) { setState(() => _step = 0); }
 +            else if (_step == 0) { setState(() => _step = -1); }
-+            else if (_step == 3) { setState(() => _step = 1); }
++            else if (_step == 3) { _code.clear(); setState(() => _step = 1); }
 +            else if (_step == 2) { setState(() => _step = 5); }
 +            else if (_step == 4) { return; }
 +            else if (_step == 5) { setState(() => _step = -1); }
@@ -344,12 +701,11 @@ index 0000000..11b33b4
 +  const SimulationNotice({super.key});
 +  @override
 +  Widget build(BuildContext context) => Container(
-+    width: double.infinity, color: const Color(0xffffe0a3),
-+    padding: const EdgeInsets.all(12),
-+    child: const Text('SIMULAÇÃO — SEM VALOR FINANCEIRO',
++    width: double.infinity, color: const Color(0xfffafafa),
++    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
++    child: const Text('Protótipo acadêmico',
 +      textAlign: TextAlign.center,
-+      style: TextStyle(color: Color(0xff4c2c00),
-+          fontWeight: FontWeight.bold, fontSize: 13),
++      style: TextStyle(color: Color(0xff555555), fontSize: 12),
 +    ),
 +  );
 +}
@@ -383,13 +739,13 @@ index 0000000..11b33b4
 +        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 +          const Icon(Icons.science_outlined, size: 36, color: Colors.grey),
 +          const SizedBox(height: 16),
-+          const Text('Comprovante de simulação',
++          const Text('Resumo da atividade',
 +              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
 +          const SizedBox(height: 8),
 +          Text(pix.dateLabel, style: const TextStyle(color: Colors.grey)),
 +          const SizedBox(height: 24),
 +          _row('Valor', formatPixAmount(pix.cents)),
-+          _row('Tipo de operação', 'Pix • demonstração'),
++          _row('Tipo de atividade', 'Pix • protótipo acadêmico'),
 +          _row('Referência de teste', pix.reference),
 +          const Divider(height: 40),
 +          const Text('Destino • dados informados', style: TextStyle(color: Colors.grey)),
@@ -422,10 +778,10 @@ index 0000000..11b33b4
 +  );
 +}
 diff --git a/lib/pages/pix/pix_screen.dart b/lib/pages/pix/pix_screen.dart
-index 3996da9..eaf2e7c 100644
+index 3996da9..91036b3 100644
 --- a/lib/pages/pix/pix_screen.dart
 +++ b/lib/pages/pix/pix_screen.dart
-@@ -1,83 +1,9 @@
+@@ -1,83 +1,11 @@
  import 'package:flutter/material.dart';
 -import 'package:material_design_icons_flutter/material_design_icons_flutter.dart';
 -import 'package:nubank_clone/constants/app_colors.dart';
@@ -435,9 +791,12 @@ index 3996da9..eaf2e7c 100644
 -import 'package:nubank_clone/utils/extensions/router_context_extension.dart';
 -import 'package:nubank_clone/widgets/label_button.dart';
 +import 'package:nubank_clone/pages/pix/pix_demo_screen.dart';
++import 'package:nubank_clone/pages/pix/local_pix_contacts.dart';
  
  class PixScreen extends StatelessWidget {
-   const PixScreen({super.key});
+-  const PixScreen({super.key});
++  final LocalContactStorage? contactStorage;
++  const PixScreen({this.contactStorage, super.key});
  
    @override
 -  Widget build(BuildContext context) {
@@ -509,11 +868,11 @@ index 3996da9..eaf2e7c 100644
 -      ),
 -    );
 -  }
-+  Widget build(BuildContext context) => const PixDemoScreen();
++  Widget build(BuildContext context) => PixDemoScreen(contactStorage: contactStorage);
  }
 diff --git a/lib/pages/pix/simulated_pix.dart b/lib/pages/pix/simulated_pix.dart
 new file mode 100644
-index 0000000..99432fd
+index 0000000..b96b26d
 --- /dev/null
 +++ b/lib/pages/pix/simulated_pix.dart
 @@ -0,0 +1,63 @@
@@ -553,7 +912,7 @@ index 0000000..99432fd
 +    this.description = '',
 +  });
 +
-+  String get reference => 'SIM-${createdAt.microsecondsSinceEpoch}';
++  String get reference => 'ACAD-${createdAt.microsecondsSinceEpoch}';
 +  String get dateLabel {
 +    String two(int n) => n.toString().padLeft(2, '0');
 +    return '${two(createdAt.day)}/${two(createdAt.month)}/${createdAt.year} '
@@ -569,35 +928,132 @@ index 0000000..99432fd
 +  };
 +
 +  String asText() => [
-+    'SIMULAÇÃO — SEM VALOR FINANCEIRO',
-+    'Comprovante de simulação',
++    'Protótipo acadêmico',
++    'Resumo da atividade',
 +    'Nenhum pagamento foi realizado.',
 +    'Valor: ${formatPixAmount(cents)}',
 +    ...details.entries.map((e) => '${e.key}: ${e.value}'),
 +    'Gerado em: $dateLabel',
 +    'Referência demonstrativa: $reference',
 +    'Documento de demonstração. Não é um comprovante bancário.',
-+    'SIMULAÇÃO — SEM VALOR FINANCEIRO',
++    'Protótipo acadêmico',
 +  ].join('\n');
 +}
 diff --git a/pubspec.yaml b/pubspec.yaml
-index 2319967..0f48649 100644
+index 2319967..5d73d18 100644
 --- a/pubspec.yaml
 +++ b/pubspec.yaml
-@@ -7,6 +7,7 @@ environment:
+@@ -7,6 +7,8 @@ environment:
    sdk: ">=3.1.0 <4.0.0"
  
  dependencies:
 +  share_plus: 10.1.4
++  shared_preferences: 2.3.5
    bootstrap_icons: ^1.11.3
    flutter_masked_text2: ^0.9.1
    flutter_native_splash: ^2.4.3
+diff --git a/test/contact_test_storage.dart b/test/contact_test_storage.dart
+new file mode 100644
+index 0000000..f5996fd
+--- /dev/null
++++ b/test/contact_test_storage.dart
+@@ -0,0 +1,11 @@
++import 'package:nubank_clone/pages/pix/local_pix_contacts.dart';
++
++class MemoryContactStorage implements LocalContactStorage {
++  List<LocalPixContact> contacts;
++  MemoryContactStorage([List<LocalPixContact> contacts = const []])
++      : contacts = List.of(contacts);
++  @override
++  Future<List<LocalPixContact>> load() async => List.of(contacts);
++  @override
++  Future<void> save(List<LocalPixContact> values) async { contacts = List.of(values); }
++}
+diff --git a/test/local_pix_contacts_test.dart b/test/local_pix_contacts_test.dart
+new file mode 100644
+index 0000000..fdf582d
+--- /dev/null
++++ b/test/local_pix_contacts_test.dart
+@@ -0,0 +1,73 @@
++import 'dart:convert';
++import 'package:flutter/material.dart';
++import 'package:flutter_test/flutter_test.dart';
++import 'package:nubank_clone/pages/pix/local_pix_contacts.dart';
++import 'package:nubank_clone/pages/pix/pix_screen.dart';
++import 'contact_test_storage.dart';
++
++const contact = LocalPixContact(id: 'one', name: 'Contato autorizado',
++    institution: 'Instituição cadastrada', cpf: '123.456.789-00',
++    phone: '(11) 91234-5678', email: 'contato@example.com');
++
++void main() {
++  test('lookup accepts formatting and never returns an unknown identity', () {
++    expect(findLocalContact([contact], '12345678900')?.id, 'one');
++    expect(findLocalContact([contact], '+55 (11) 91234-5678')?.id, 'one');
++    expect(findLocalContact([contact], ' CONTATO@EXAMPLE.COM ')?.id, 'one');
++    expect(findLocalContact([contact], 'outro@example.com'), isNull);
++    expect(findLocalContact([contact], ''), isNull);
++    expect(findLocalContact([contact], 'contato'), isNull);
++  });
++  test('contacts survive JSON roundtrip and conflicting keys are rejected', () {
++    final restored = LocalPixContact.fromJson(jsonDecode(jsonEncode(contact.toJson())));
++    expect(restored.keys, contact.keys);
++    expect(restored.name, contact.name);
++    const duplicate = LocalPixContact(id: 'two', name: 'Outro',
++        email: 'CONTATO@example.com');
++    expect(hasConflictingKeys(duplicate, [contact]), isTrue);
++    expect(hasConflictingKeys(contact, [contact]), isFalse);
++    expect(findLocalContact([contact, duplicate], contact.email), isNull);
++  });
++  testWidgets('registered key fills details; changing key clears stale data', (tester) async {
++    await tester.pumpWidget(MaterialApp(home: PixScreen(
++        contactStorage: MemoryContactStorage([contact]))));
++    await tester.pumpAndSettle();
++    await tester.tap(find.text('Transferir'));
++    await tester.pumpAndSettle();
++    await tester.enterText(find.byKey(const ValueKey('pix-field-1')), 'CONTATO@example.com');
++    await tester.pumpAndSettle();
++    TextFormField field(int i) => tester.widget<TextFormField>(
++        find.byKey(ValueKey('pix-field-$i')));
++    expect(field(0).controller!.text, contact.name);
++    expect(field(2).controller!.text, contact.institution);
++    await tester.enterText(find.byKey(const ValueKey('pix-field-1')), 'outro@example.com');
++    await tester.pumpAndSettle();
++    expect(field(0).controller!.text, isEmpty);
++    expect(field(2).controller!.text, isEmpty);
++  });
++  testWidgets('contact editor saves into the local repository', (tester) async {
++    final storage = MemoryContactStorage();
++    await tester.pumpWidget(MaterialApp(home: PixScreen(contactStorage: storage)));
++    await tester.pumpAndSettle();
++    await tester.ensureVisible(find.text('Meus contatos'));
++    await tester.tap(find.text('Meus contatos'));
++    await tester.pumpAndSettle();
++    await tester.tap(find.text('Novo contato'));
++    await tester.pumpAndSettle();
++    await tester.enterText(find.byKey(const ValueKey('contact-field-0')), 'Contato autorizado');
++    await tester.enterText(find.byKey(const ValueKey('contact-field-4')), 'contato@example.com');
++    await tester.ensureVisible(find.text('Salvar contato'));
++    await tester.tap(find.text('Salvar contato'));
++    await tester.pumpAndSettle();
++    expect(storage.contacts.single.email, 'contato@example.com');
++    await tester.pageBack();
++    await tester.pumpAndSettle();
++    await tester.ensureVisible(find.text('Transferir'));
++    await tester.tap(find.text('Transferir'));
++    await tester.pumpAndSettle();
++    await tester.enterText(find.byKey(const ValueKey('pix-field-1')), 'contato@example.com');
++    await tester.pumpAndSettle();
++    expect(tester.widget<TextFormField>(find.byKey(const ValueKey('pix-field-0')))
++        .controller!.text, 'Contato autorizado');
++  });
++}
 diff --git a/test/simulated_pix_test.dart b/test/simulated_pix_test.dart
 new file mode 100644
-index 0000000..a6f077c
+index 0000000..d6376b8
 --- /dev/null
 +++ b/test/simulated_pix_test.dart
-@@ -0,0 +1,101 @@
+@@ -0,0 +1,112 @@
 +import 'dart:io';
 +import 'dart:ui' as ui;
 +import 'package:flutter/material.dart';
@@ -607,6 +1063,7 @@ index 0000000..a6f077c
 +import 'package:nubank_clone/pages/pix/pix_screen.dart';
 +import 'package:nubank_clone/pages/pix/pix_demo_screen.dart';
 +import 'package:nubank_clone/pages/pix/simulated_pix.dart';
++import 'contact_test_storage.dart';
 +
 +void main() {
 +  test('Brazilian currency preserves cents without rounding', () {
@@ -623,10 +1080,10 @@ index 0000000..a6f077c
 +    createdAt: DateTime(2026, 10, 28, 15, 30));
 +  test('copied receipt identifies itself as simulation', () {
 +    final text = sample.asText();
-+    expect(text.startsWith('SIMULAÇÃO — SEM VALOR FINANCEIRO'), isTrue);
-+    expect(text.endsWith('SIMULAÇÃO — SEM VALOR FINANCEIRO'), isTrue);
++    expect(text.startsWith('Protótipo acadêmico'), isTrue);
++    expect(text.endsWith('Protótipo acadêmico'), isTrue);
 +    expect(text, contains('Nenhum pagamento foi realizado.'));
-+    expect(sample.reference, startsWith('SIM-'));
++    expect(sample.reference, startsWith('ACAD-'));
 +    expect(sample.dateLabel, '28/10/2026 15:30');
 +  });
 +  testWidgets('receipt image includes both simulation notices', (tester) async {
@@ -646,8 +1103,8 @@ index 0000000..a6f077c
 +        child: SizedBox(width: 393, child: RepaintBoundary(key: captureKey,
 +          child: SimulatedPixReceipt(pix: sample))))))));
 +    await tester.pumpAndSettle();
-+    expect(find.text('SIMULAÇÃO — SEM VALOR FINANCEIRO'), findsNWidgets(2));
-+    expect(find.text('Comprovante de simulação'), findsOneWidget);
++    expect(find.text('Protótipo acadêmico'), findsNWidgets(2));
++    expect(find.text('Resumo da atividade'), findsOneWidget);
 +    expect(find.text('Nenhum pagamento foi realizado.'), findsOneWidget);
 +    await tester.runAsync(() async {
 +      final boundary = captureKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
@@ -661,41 +1118,51 @@ index 0000000..a6f077c
 +    });
 +  });
 +  testWidgets('empty form cannot advance to confirmation', (tester) async {
-+    await tester.pumpWidget(const MaterialApp(home: PixScreen()));
++    await tester.pumpWidget(MaterialApp(home: PixScreen(contactStorage: MemoryContactStorage())));
++    await tester.pumpAndSettle();
 +    await tester.tap(find.text('Transferir'));
 +    await tester.pumpAndSettle();
-+    final button = find.text('Revisar simulação');
++    final button = find.text('Revisar');
 +    await tester.ensureVisible(button);
 +    await tester.tap(button);
 +    await tester.pumpAndSettle();
 +    expect(find.text('Preencha este campo'), findsNWidgets(2));
-+    expect(find.text('Confirmar simulação'), findsNothing);
++    expect(find.text('Confirmar atividade'), findsNothing);
 +  });
 +  testWidgets('entered details survive review and receipt generation', (tester) async {
-+    await tester.pumpWidget(const MaterialApp(home: PixScreen()));
++    await tester.pumpWidget(MaterialApp(home: PixScreen(contactStorage: MemoryContactStorage())));
++    await tester.pumpAndSettle();
 +    await tester.tap(find.text('Transferir'));
 +    await tester.pumpAndSettle();
 +    await tester.enterText(find.byKey(const ValueKey('pix-field-0')), 'Pessoa de teste');
 +    await tester.enterText(find.byKey(const ValueKey('pix-field-1')), 'exemplo@example.com');
 +    await tester.enterText(find.byKey(const ValueKey('pix-field-4')), '150,50');
-+    await tester.ensureVisible(find.text('Revisar simulação'));
-+    await tester.tap(find.text('Revisar simulação'));
++    await tester.ensureVisible(find.text('Revisar'));
++    await tester.tap(find.text('Revisar'));
 +    await tester.pumpAndSettle();
 +    expect(find.text('R\$ 150,50'), findsOneWidget);
-+    await tester.ensureVisible(find.text('Confirmar simulação'));
-+    await tester.tap(find.text('Confirmar simulação'));
++    await tester.ensureVisible(find.text('Confirmar atividade'));
++    await tester.tap(find.text('Confirmar atividade'));
 +    await tester.pumpAndSettle();
-+    expect(find.text('Usar código de teste 0000'), findsOneWidget);
-+    await tester.ensureVisible(find.text('Usar código de teste 0000'));
-+    await tester.tap(find.text('Usar código de teste 0000'));
++    final code = find.byKey(const ValueKey('academic-code'));
++    final controller = tester.widget<TextField>(code).controller!;
++    await tester.enterText(code, '482');
++    await tester.pumpAndSettle();
++    expect(tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, 'Continuar'))
++        .onPressed, isNull);
++    await tester.enterText(code, '4829');
++    await tester.pumpAndSettle();
++    await tester.ensureVisible(find.text('Continuar'));
++    await tester.tap(find.text('Continuar'));
 +    await tester.pump(const Duration(seconds: 1));
 +    await tester.pumpAndSettle();
-+    expect(find.text('Sua simulação foi concluída'), findsOneWidget);
-+    await tester.ensureVisible(find.text('Abrir comprovante demonstrativo'));
-+    await tester.tap(find.text('Abrir comprovante demonstrativo'));
++    expect(controller.text, isEmpty);
++    expect(find.text('Atividade concluída'), findsOneWidget);
++    await tester.ensureVisible(find.text('Abrir resumo da atividade'));
++    await tester.tap(find.text('Abrir resumo da atividade'));
 +    await tester.pumpAndSettle();
-+    expect(find.text('Comprovante de simulação'), findsOneWidget);
++    expect(find.text('Resumo da atividade'), findsOneWidget);
 +    expect(find.text('Pessoa de teste'), findsOneWidget);
-+    expect(find.text('SIMULAÇÃO — SEM VALOR FINANCEIRO'), findsNWidgets(3));
++    expect(find.text('Protótipo acadêmico'), findsNWidgets(3));
 +  });
 +}
